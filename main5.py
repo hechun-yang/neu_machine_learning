@@ -115,12 +115,12 @@ def get_transforms(phase):
 
 
 def train_model():
-    # 4.1 准备数据
+   
     train_dataset = RetinalDataset(CONFIG['train_img_dir'], CONFIG['train_mask_dir'], transform=get_transforms('train'))
-    # 实际项目中建议划分验证集，这里因为数据太少(20张)，直接全部用于训练
+   
     train_loader = DataLoader(train_dataset, batch_size=CONFIG['batch_size'], shuffle=True, num_workers=2)
 
-    # 4.2 定义模型 (U-Net + ResNet34)
+
     model = smp.Unet(
         encoder_name="resnet34", 
         encoder_weights="imagenet", 
@@ -131,7 +131,7 @@ def train_model():
 
     # 4.3 优化器与损失
     optimizer = torch.optim.AdamW(model.parameters(), lr=CONFIG['lr'])
-    # 组合损失：BCE (像素级分类) + Dice (整体重合度)
+   
     loss_fn = smp.losses.DiceLoss(mode='binary', from_logits=True)
     
     # 4.4 训练循环
@@ -158,9 +158,6 @@ def train_model():
     print("Training Finished. Model saved.")
     return model
 
-# ===========================
-# 5. 推理与生成 CSV
-# ===========================
 def rle_encoding(x):
     """
     x: numpy array of shape (height, width), 1 - mask, 0 - background
@@ -194,40 +191,24 @@ def predict_and_submit(model):
             logits = model(image)
             prob = torch.sigmoid(logits) # 映射到 0-1
             pred_mask = (prob > 0.5).float().cpu().numpy().squeeze() # 阈值化
-            
-            # --- 保存预测图片 (可选，用于肉眼检查) ---
-            # 必须保证血管是255，背景是0
+         
             save_img = (pred_mask * 255).astype(np.uint8)
             save_path = os.path.join(CONFIG['output_dir'], name[0])
-            # 注意：保存时如果原文件名是jpg，这里保存为png以防压缩损失
+           
             if save_path.endswith('.jpg'):
                 save_path = save_path.replace('.jpg', '.png')
             cv2.imwrite(save_path, save_img)
             
-            # --- 直接生成 CSV 数据 (类似 segmentation_to_csv.py 的逻辑) ---
-            # 我们的 pred_mask 已经是 (血管=1, 背景=0)，符合 rle_encoding 的输入
             rle_str = rle_encoding(pred_mask)
-            
-            # ID 需要去掉后缀
+
             img_id = name[0].split('.')[0]
             submission_data.append([img_id, rle_str])
-            
-    # 保存 CSV
+      
     df = pd.DataFrame(submission_data, columns=['Id', 'Predicted'])
     df.to_csv('submission.csv', index=False)
     print("Submission file saved to 'submission.csv'.")
 
-# ===========================
-# 主程序
-# ===========================
 if __name__ == "__main__":
-    # 1. 训练
+   
     trained_model = train_model()
-    
-    # 2. 如果只是想推理（加载已有权重）：
-    # trained_model = smp.Unet(encoder_name="resnet34", in_channels=3, classes=1)
-    # trained_model.load_state_dict(torch.load("best_model.pth"))
-    # trained_model.to(CONFIG['device'])
-    
-    # 3. 预测并生成CSV
     predict_and_submit(trained_model)
